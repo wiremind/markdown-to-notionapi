@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultNotionVersion = "2022-06-28"
-	defaultTimeout       = 15 * time.Second
+	defaultTimeout       = 1000 * time.Second
 )
 
 func main() {
@@ -30,6 +30,7 @@ func main() {
 	flag.BoolVar(&config.Create, "create", false, "Create a new page")
 	flag.StringVar(&config.ImageBaseURL, "image-base-url", "", "Base URL for relative image paths")
 	flag.BoolVar(&config.DryRun, "dry-run", false, "Print JSON that would be sent, don't call API")
+	flag.StringVar(&config.OutputFile, "output-file", "", "File to write dry-run output to (default: stdout)")
 	flag.StringVar(&config.NotionVersion, "notion-version", defaultNotionVersion, "Notion API version")
 	flag.BoolVar(&config.Verbose, "v", false, "Verbose output")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Verbose output")
@@ -44,10 +45,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  %s --page-id abc123 --md document.md\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  cat notes.md | %s --page-id abc123\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "  %s --create --parent-id xyz789 --title \"My Document\" --md notes.md\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --dry-run --md document.md\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --dry-run --md document.md --output-file output.json\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment Variables:\n")
-		fmt.Fprintf(os.Stderr, "  NOTION_TOKEN    Notion integration token (required)\n")
+		fmt.Fprintf(os.Stderr, "  NOTION_TOKEN    Notion integration token (required unless --dry-run is used)\n")
 		fmt.Fprintf(os.Stderr, "\nSupported Markdown:\n")
 		fmt.Fprintf(os.Stderr, "  - Headings (# ## ###)\n")
 		fmt.Fprintf(os.Stderr, "  - Paragraphs with **bold**, *italic*, `code`, ~~strikethrough~~, [links](url)\n")
@@ -72,9 +75,10 @@ func main() {
 
 	// Get Notion token from environment
 	notionToken := os.Getenv("NOTION_TOKEN")
-	if notionToken == "" {
+	if notionToken == "" && !config.DryRun {
 		fmt.Fprintf(os.Stderr, "Error: NOTION_TOKEN environment variable is required\n")
 		fmt.Fprintf(os.Stderr, "Get your token from: https://www.notion.so/my-integrations\n")
+		fmt.Fprintf(os.Stderr, "Note: Use --dry-run flag to test conversion without API token\n")
 		os.Exit(1)
 	}
 
