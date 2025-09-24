@@ -65,9 +65,10 @@ func (c *Client) formatPageID(pageID string) string {
 func (c *Client) AppendBlockChildren(ctx context.Context, blockID string, blocks []Block) error {
 	formattedID := c.formatPageID(blockID)
 
-	// Split blocks into chunks of 100 (Notion API limit)
-	for i := 0; i < len(blocks); i += 100 {
-		end := i + 100
+	// Split blocks into chunks of 25 for better reliability with large documents
+	chunkSize := 25
+	for i := 0; i < len(blocks); i += chunkSize {
+		end := i + chunkSize
 		if end > len(blocks) {
 			end = len(blocks)
 		}

@@ -23,6 +23,7 @@ type Config struct {
 	Replace       bool
 	ImageBaseURL  string
 	DryRun        bool
+	OutputFile    string
 	NotionVersion string
 	Verbose       bool
 	Timeout       time.Duration
@@ -38,11 +39,14 @@ type Runner struct {
 
 // NewRunner creates a new runner instance
 func NewRunner(config *Config, notionToken string) (*Runner, error) {
-	if notionToken == "" {
+	if notionToken == "" && !config.DryRun {
 		return nil, fmt.Errorf("NOTION_TOKEN environment variable is required")
 	}
 
-	client := notion.NewClient(notionToken, config.NotionVersion, config.Timeout, config.Verbose)
+	var client *notion.Client
+	if notionToken != "" {
+		client = notion.NewClient(notionToken, config.NotionVersion, config.Timeout, config.Verbose)
+	}
 	converter := markdown.NewConverter(config.ImageBaseURL, config.Verbose)
 
 	return &Runner{
@@ -97,6 +101,11 @@ func (r *Runner) Run(ctx context.Context) error {
 
 // validateConfig validates the runner configuration
 func (r *Runner) validateConfig() error {
+	// Skip page/parent ID validation for dry-run mode
+	if r.config.DryRun {
+		return nil
+	}
+
 	if r.config.Create {
 		if r.config.ParentID == "" {
 			return fmt.Errorf("--parent-id is required when --create is set")
@@ -136,7 +145,17 @@ func (r *Runner) printDryRun(blocks []notion.Block) error {
 		return fmt.Errorf("failed to marshal blocks for dry run: %w", err)
 	}
 
-	fmt.Print(string(data))
+	// Write to file if specified, otherwise to stdout
+	if r.config.OutputFile != "" {
+		if err := os.WriteFile(r.config.OutputFile, data, 0600); err != nil {
+			return fmt.Errorf("failed to write to output file: %w", err)
+		}
+		if r.config.Verbose {
+			fmt.Fprintf(os.Stderr, "Dry-run output written to: %s\n", r.config.OutputFile)
+		}
+	} else {
+		fmt.Print(string(data))
+	}
 	return nil
 }
 
@@ -167,20 +186,30 @@ func (r *Runner) replacePage(ctx context.Context, blocks []notion.Block) error {
 		return fmt.Errorf("failed to list existing blocks: %w", err)
 	}
 
-	// Delete existing blocks
-	for _, block := range existingBlocks {
-		if err := r.client.DeleteBlock(ctx, block.ID); err != nil {
-			if r.config.Verbose {
-				fmt.Fprintf(os.Stderr, "Warning: failed to delete block: %v\n", err)
+	// Delete all existing blocks first (simple sequential deletion)
+	if len(existingBlocks) > 0 {
+		if r.config.Verbose {
+			fmt.Fprintf(os.Stderr, "Deleting %d existing blocks...\n", len(existingBlocks))
+		}
+		for i, block := range existingBlocks {
+			if r.config.Verbose && i%10 == 0 {
+				fmt.Fprintf(os.Stderr, "Deleted %d/%d blocks\n", i, len(existingBlocks))
 			}
+			if err := r.client.DeleteBlock(ctx, block.ID); err != nil {
+				if r.config.Verbose {
+					fmt.Fprintf(os.Stderr, "Warning: failed to delete block %s: %v\n", block.ID, err)
+				}
+			}
+		}
+		if r.config.Verbose {
+			fmt.Fprintf(os.Stderr, "Finished deleting all %d existing blocks\n", len(existingBlocks))
 		}
 	}
 
-	if len(existingBlocks) > 0 && r.config.Verbose {
-		fmt.Fprintf(os.Stderr, "Deleted %d existing blocks\n", len(existingBlocks))
+	// Now add new blocks
+	if r.config.Verbose {
+		fmt.Fprintf(os.Stderr, "Adding %d new blocks...\n", len(blocks))
 	}
-
-	// Add new blocks
 	if err := r.client.AppendBlockChildren(ctx, r.config.PageID, blocks); err != nil {
 		return fmt.Errorf("failed to append new blocks: %w", err)
 	}

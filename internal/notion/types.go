@@ -18,6 +18,9 @@ type Block struct {
 	Image            *Image            `json:"image,omitempty"`
 	BulletedListItem *BulletedListItem `json:"bulleted_list_item,omitempty"`
 	NumberedListItem *NumberedListItem `json:"numbered_list_item,omitempty"`
+	Table            *Table            `json:"table,omitempty"`
+	TableRow         *TableRow         `json:"table_row,omitempty"`
+	Children         []Block           `json:"children,omitempty"`
 }
 
 // RichText represents formatted text content
@@ -46,7 +49,7 @@ type Annotations struct {
 	Strikethrough bool   `json:"strikethrough"`
 	Underline     bool   `json:"underline"`
 	Code          bool   `json:"code"`
-	Color         string `json:"color"`
+	Color         string `json:"color,omitempty"`
 }
 
 // Paragraph block type
@@ -145,6 +148,19 @@ type ErrorResponse struct {
 	Status  int    `json:"status"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// Table represents a table block
+type Table struct {
+	TableWidth      int     `json:"table_width"`
+	HasColumnHeader bool    `json:"has_column_header"`
+	HasRowHeader    bool    `json:"has_row_header"`
+	Children        []Block `json:"children"`
+}
+
+// TableRow represents a table row block
+type TableRow struct {
+	Cells [][]RichText `json:"cells"`
 }
 
 // PageResponse represents a created or retrieved page

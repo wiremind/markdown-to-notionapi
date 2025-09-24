@@ -34,39 +34,39 @@ go install github.com/wiremind/markdown-to-notionapi/cmd/notion-md@latest
 
 4. **Upload Markdown**:
    ```bash
-   notion-md --page-id YOUR_PAGE_ID --md document.md
+   md2notion --page-id YOUR_PAGE_ID --md document.md
    ```
 
 ## Usage Examples
 
 ### Append to existing page
 ```bash
-notion-md --page-id abc123def456 --md notes.md
+md2notion --page-id abc123def456 --md notes.md
 ```
 
 ### Read from stdin
 ```bash
-cat README.md | notion-md --page-id abc123def456
+cat README.md | md2notion --page-id abc123def456
 ```
 
 ### Replace page content
 ```bash
-notion-md --page-id abc123def456 --md document.md --replace
+md2notion --page-id abc123def456 --md document.md --replace
 ```
 
 ### Create new page
 ```bash
-notion-md --create --parent-id xyz789 --title "My Document" --md notes.md
+md2notion --create --parent-id xyz789 --title "My Document" --md notes.md
 ```
 
 ### Dry run (preview JSON)
 ```bash
-notion-md --page-id abc123def456 --md notes.md --dry-run
+md2notion --page-id abc123def456 --md notes.md --dry-run
 ```
 
 ### Handle relative images
 ```bash
-notion-md --page-id abc123def456 --md notes.md --image-base-url "https://example.com/assets/"
+md2notion --page-id abc123def456 --md notes.md --image-base-url "https://example.com/assets/"
 ```
 
 ## Supported Markdown
@@ -89,7 +89,7 @@ notion-md --page-id abc123def456 --md notes.md --image-base-url "https://example
 ## Command Line Options
 
 ```
-Usage: notion-md [options]
+Usage: md2notion [options]
 
 Options:
   --page-id string         Notion page ID to append blocks to (required unless --create is set)
@@ -103,7 +103,7 @@ Options:
   --dry-run                Print JSON that would be sent, don't call API
   --notion-version string  Notion API version (default "2022-06-28")
   -v, --verbose            Verbose output
-  --timeout duration       HTTP request timeout (default 15s)
+  --timeout duration       HTTP request timeout (default 1000s)
   -h, --help              Show help
 
 Environment Variables:

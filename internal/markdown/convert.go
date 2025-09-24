@@ -4,12 +4,15 @@ package markdown
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 
 	"github.com/wiremind/markdown-to-notionapi/internal/notion"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	extast "github.com/yuin/goldmark/extension/ast"
 	"github.com/yuin/goldmark/text"
 )
 
@@ -29,46 +32,76 @@ func NewConverter(imageBaseURL string, verbose bool) *Converter {
 
 // Convert parses Markdown content and returns Notion blocks
 func (c *Converter) Convert(markdown []byte) ([]notion.Block, error) {
-	md := goldmark.New()
+	md := goldmark.New(
+		goldmark.WithExtensions(extension.Table),
+	)
 	doc := md.Parser().Parse(text.NewReader(markdown))
 
 	var blocks []notion.Block
 	for child := doc.FirstChild(); child != nil; child = child.NextSibling() {
-		block, err := c.convertNode(child, markdown)
+		nodeBlocks, err := c.convertNode(child, markdown)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert node: %w", err)
 		}
-		if block != nil {
-			blocks = append(blocks, *block)
-		}
+		blocks = append(blocks, nodeBlocks...)
 	}
 
 	return blocks, nil
 }
 
-// convertNode converts a single AST node to a Notion block
-func (c *Converter) convertNode(node ast.Node, source []byte) (*notion.Block, error) {
+// convertNode converts a single AST node to one or more Notion blocks
+func (c *Converter) convertNode(node ast.Node, source []byte) ([]notion.Block, error) {
 	switch n := node.(type) {
 	case *ast.Heading:
-		return c.convertHeading(n, source)
+		block, err := c.convertHeading(n, source)
+		if err != nil || block == nil {
+			return nil, err
+		}
+		return []notion.Block{*block}, nil
 	case *ast.Paragraph:
-		return c.convertParagraph(n, source)
+		block, err := c.convertParagraph(n, source)
+		if err != nil || block == nil {
+			return nil, err
+		}
+		return []notion.Block{*block}, nil
 	case *ast.List:
-		return c.convertList(n, source)
+		block, err := c.convertList(n, source)
+		if err != nil || block == nil {
+			return nil, err
+		}
+		return []notion.Block{*block}, nil
 	case *ast.Blockquote:
-		return c.convertBlockquote(n, source)
+		block, err := c.convertBlockquote(n, source)
+		if err != nil || block == nil {
+			return nil, err
+		}
+		return []notion.Block{*block}, nil
 	case *ast.CodeBlock:
-		return c.convertCodeBlock(n, source)
+		block, err := c.convertCodeBlock(n, source)
+		if err != nil || block == nil {
+			return nil, err
+		}
+		return []notion.Block{*block}, nil
 	case *ast.FencedCodeBlock:
-		return c.convertFencedCodeBlock(n, source)
+		block, err := c.convertFencedCodeBlock(n, source)
+		if err != nil || block == nil {
+			return nil, err
+		}
+		return []notion.Block{*block}, nil
 	case *ast.ThematicBreak:
-		return c.convertThematicBreak()
+		block, err := c.convertThematicBreak()
+		if err != nil || block == nil {
+			return nil, err
+		}
+		return []notion.Block{*block}, nil
 	case *ast.HTMLBlock:
 		// Skip HTML blocks for simplicity
-		return nil, nil
+		return []notion.Block{}, nil
+	case *extast.Table:
+		return c.convertTable(n, source)
 	default:
 		// Skip unknown node types
-		return nil, nil
+		return []notion.Block{}, nil
 	}
 }
 
@@ -268,6 +301,14 @@ func (c *Converter) convertThematicBreak() (*notion.Block, error) {
 func (c *Converter) convertImage(node *ast.Image, source []byte) (*notion.Block, error) {
 	src := string(node.Destination)
 
+	// Skip invalid or unsupported image URLs
+	if !c.isValidImageURL(src) {
+		if c.verbose {
+			fmt.Fprintf(os.Stderr, "Skipping invalid/unsupported image URL: %s\n", src)
+		}
+		return nil, nil
+	}
+
 	// Handle relative URLs
 	if !c.isAbsoluteURL(src) {
 		if c.imageBaseURL == "" {
@@ -302,6 +343,136 @@ func (c *Converter) convertImage(node *ast.Image, source []byte) (*notion.Block,
 			Caption:  caption,
 		},
 	}, nil
+}
+
+// convertTable converts table nodes to native Notion table blocks
+func (c *Converter) convertTable(node *extast.Table, source []byte) ([]notion.Block, error) {
+	var tableWidth int
+	var tableRows []notion.Block
+	hasColumnHeader := false
+
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		switch n := child.(type) {
+		case *extast.TableHeader:
+			// Handle table header row
+			hasColumnHeader = true
+
+			// Count columns from header
+			if tableWidth == 0 {
+				for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
+					if _, ok := cell.(*extast.TableCell); ok {
+						tableWidth++
+					}
+				}
+			}
+
+			// Convert header to table_row block
+			rowBlock, err := c.convertTableHeaderToBlock(n, source)
+			if err != nil {
+				return nil, err
+			}
+			tableRows = append(tableRows, *rowBlock)
+
+		case *extast.TableRow:
+			// Handle regular table rows
+
+			// Count columns from first row if not already done
+			if tableWidth == 0 {
+				for cell := n.FirstChild(); cell != nil; cell = cell.NextSibling() {
+					if _, ok := cell.(*extast.TableCell); ok {
+						tableWidth++
+					}
+				}
+			}
+
+			// Convert row to table_row block
+			rowBlock, err := c.convertTableRowToBlock(n, source)
+			if err != nil {
+				return nil, err
+			}
+			tableRows = append(tableRows, *rowBlock)
+		}
+	}
+
+	// Create the table block with table_row children inside the Table struct
+	tableBlock := notion.Block{
+		Object: "block",
+		Type:   "table",
+		Table: &notion.Table{
+			TableWidth:      tableWidth,
+			HasColumnHeader: hasColumnHeader,
+			HasRowHeader:    false,
+			Children:        tableRows, // Children go inside the Table struct
+		},
+	}
+
+	// Return just the table block with rows as children
+	return []notion.Block{tableBlock}, nil
+}
+
+// convertTableHeaderToBlock converts a table header to a table_row block
+func (c *Converter) convertTableHeaderToBlock(header *extast.TableHeader, source []byte) (*notion.Block, error) {
+	var cells [][]notion.RichText
+
+	for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if tableCell, ok := cell.(*extast.TableCell); ok {
+			cellRichText, err := c.convertTableCellToRichText(tableCell, source)
+			if err != nil {
+				return nil, err
+			}
+			cells = append(cells, cellRichText)
+		}
+	}
+
+	return &notion.Block{
+		Object: "block",
+		Type:   "table_row",
+		TableRow: &notion.TableRow{
+			Cells: cells,
+		},
+	}, nil
+}
+
+// convertTableRowToBlock converts a table row to a table_row block
+func (c *Converter) convertTableRowToBlock(row *extast.TableRow, source []byte) (*notion.Block, error) {
+	var cells [][]notion.RichText
+
+	for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+		if tableCell, ok := cell.(*extast.TableCell); ok {
+			cellRichText, err := c.convertTableCellToRichText(tableCell, source)
+			if err != nil {
+				return nil, err
+			}
+			cells = append(cells, cellRichText)
+		}
+	}
+
+	return &notion.Block{
+		Object: "block",
+		Type:   "table_row",
+		TableRow: &notion.TableRow{
+			Cells: cells,
+		},
+	}, nil
+}
+
+// convertTableCellToRichText converts a table cell to rich text
+func (c *Converter) convertTableCellToRichText(cell *extast.TableCell, source []byte) ([]notion.RichText, error) {
+	// Use the existing inline conversion logic
+	richTexts, err := c.convertInlineNodes(cell, source)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no content, return a single empty text element
+	if len(richTexts) == 0 {
+		return []notion.RichText{{
+			Type: "text",
+			Text: &notion.Text{Content: ""},
+		}}, nil
+	}
+
+	return richTexts, nil
 }
 
 // convertInlineNodes converts child nodes to rich text
@@ -444,4 +615,36 @@ func (c *Converter) joinURL(baseURL, relativePath string) string {
 
 	u.Path = path.Join(u.Path, relativePath)
 	return u.String()
+}
+
+// isValidImageURL checks if an image URL is valid for Notion API
+func (c *Converter) isValidImageURL(urlStr string) bool {
+	// Skip empty URLs
+	if urlStr == "" {
+		return false
+	}
+
+	// Skip Notion attachment URLs (they start with "attachment:")
+	if strings.HasPrefix(urlStr, "attachment:") {
+		return false
+	}
+
+	// Skip data URLs (base64 images)
+	if strings.HasPrefix(urlStr, "data:") {
+		return false
+	}
+
+	// For relative URLs, we'll validate them later after joining with base URL
+	if !c.isAbsoluteURL(urlStr) {
+		return true
+	}
+
+	// Parse the URL to ensure it's valid
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return false
+	}
+
+	// Must be an absolute URL with http or https scheme
+	return u.IsAbs() && (u.Scheme == "http" || u.Scheme == "https")
 }
