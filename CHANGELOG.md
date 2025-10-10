@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/wiremind/markdown-to-notionapi/compare/markdown-to-notionapi-0.1.2...markdown-to-notionapi-0.1.3) (2025-10-10)
+
+
+### Bug Fixes
+
+* update Docker metadata extraction to use version instead of tag name ([613ea0d](https://github.com/wiremind/markdown-to-notionapi/commit/613ea0daf43c73ce15619918f8dd01e6a63bfc8a))
+
 ## [0.1.2](https://github.com/wiremind/markdown-to-notionapi/compare/markdown-to-notionapi-v0.1.1...markdown-to-notionapi-0.1.2) (2025-10-10)
 
 
