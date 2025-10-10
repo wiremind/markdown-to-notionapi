@@ -67,7 +67,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Extract metadata for Docker
         if: ${{ steps.release.outputs.release_created }}
         id: meta
@@ -75,9 +75,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.release.outputs.tag_name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.release.outputs.tag_name }}
-            type=semver,pattern={{major}},value=${{ steps.release.outputs.tag_name }}
+            type=semver,pattern={{version}},value=${{ steps.release.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.release.outputs.version }}
+            type=semver,pattern={{major}},value=${{ steps.release.outputs.version }}
             type=raw,value=latest
       
       - name: Build and push Docker image
