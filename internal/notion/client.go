@@ -19,6 +19,9 @@ const (
 	MaxRetries    = 3
 	BaseBackoff   = 1 * time.Second
 	MaxBackoff    = 16 * time.Second
+	// BlockChunkSize defines the maximum number of blocks to send in a single API call
+	// Notion's limit is 100, but we use 50 for better reliability with large documents
+	BlockChunkSize = 50
 )
 
 // Client handles Notion API interactions
@@ -61,39 +64,54 @@ func (c *Client) formatPageID(pageID string) string {
 		cleaned[0:8], cleaned[8:12], cleaned[12:16], cleaned[16:20], cleaned[20:32])
 }
 
-// AppendBlockChildren appends blocks to a page or block
-func (c *Client) AppendBlockChildren(ctx context.Context, blockID string, blocks []Block) error {
-	formattedID := c.formatPageID(blockID)
+// processBlocksInChunks processes blocks in chunks to respect Notion's API limits
+// Notion's API has a limit of 100 blocks per request. This function splits
+// blocks into smaller chunks and processes them sequentially with a small
+// delay between chunks to be gentle on the API.
+func (c *Client) processBlocksInChunks(ctx context.Context, blocks []Block, processFn func(ctx context.Context, chunk []Block) error) error {
+	if len(blocks) == 0 {
+		return nil
+	}
 
-	// Split blocks into chunks of 25 for better reliability with large documents
-	chunkSize := 25
-	for i := 0; i < len(blocks); i += chunkSize {
-		end := i + chunkSize
+	for i := 0; i < len(blocks); i += BlockChunkSize {
+		end := i + BlockChunkSize
 		if end > len(blocks) {
 			end = len(blocks)
 		}
 
 		chunk := blocks[i:end]
-		req := AppendBlockChildrenRequest{Children: chunk}
-
-		if err := c.makeRequest(ctx, "PATCH", fmt.Sprintf("/blocks/%s/children", formattedID), req, nil); err != nil {
-			return fmt.Errorf("failed to append blocks (chunk %d-%d): %w", i+1, end, err)
+		if err := processFn(ctx, chunk); err != nil {
+			return fmt.Errorf("failed to process blocks (chunk %d-%d): %w", i+1, end, err)
 		}
 
 		if c.verbose {
-			fmt.Fprintf(os.Stderr, "Uploaded %d blocks (chunk %d-%d)\n", len(chunk), i+1, end)
+			fmt.Fprintf(os.Stderr, "Processed %d blocks (chunk %d-%d)\n", len(chunk), i+1, end)
 		}
 
 		// Small pause between chunks to be nice to the API
 		if end < len(blocks) {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
 	return nil
 }
 
+// AppendBlockChildren appends blocks to a page or block
+// Blocks are automatically split into chunks to respect Notion's 100-block limit per API call.
+// Uses a chunk size of 50 for better reliability with large documents.
+func (c *Client) AppendBlockChildren(ctx context.Context, blockID string, blocks []Block) error {
+	formattedID := c.formatPageID(blockID)
+
+	return c.processBlocksInChunks(ctx, blocks, func(ctx context.Context, chunk []Block) error {
+		req := AppendBlockChildrenRequest{Children: chunk}
+		return c.makeRequest(ctx, "PATCH", fmt.Sprintf("/blocks/%s/children", formattedID), req, nil)
+	})
+}
+
 // CreatePage creates a new page under a parent page
+// The page is created first without children, then blocks are appended in chunks
+// to avoid Notion's 100-block limit per API call.
 func (c *Client) CreatePage(ctx context.Context, parentID, title string, blocks []Block) (*PageResponse, error) {
 	formattedParentID := c.formatPageID(parentID)
 	titleText := []RichText{{
@@ -101,6 +119,7 @@ func (c *Client) CreatePage(ctx context.Context, parentID, title string, blocks 
 		Text: &Text{Content: title},
 	}}
 
+	// Create the page without children first to avoid the 100-block limit
 	req := CreatePageRequest{
 		Parent: Parent{
 			Type:   "page_id",
@@ -109,12 +128,51 @@ func (c *Client) CreatePage(ctx context.Context, parentID, title string, blocks 
 		Properties: PageProperties{
 			Title: TitleProperty{Title: titleText},
 		},
-		Children: blocks,
+		// Don't include children in the initial creation
 	}
 
 	var resp PageResponse
 	if err := c.makeRequest(ctx, "POST", "/pages", req, &resp); err != nil {
 		return nil, fmt.Errorf("failed to create page: %w", err)
+	}
+
+	// If there are blocks to add, append them in chunks after page creation
+	if len(blocks) > 0 {
+		if err := c.AppendBlockChildren(ctx, resp.ID, blocks); err != nil {
+			return nil, fmt.Errorf("failed to add content to page: %w", err)
+		}
+	}
+
+	return &resp, nil
+}
+
+// CreatePageInDatabase creates a new page in a database
+// The page is created first without children, then blocks are appended in chunks
+// to avoid Notion's 100-block limit per API call.
+// Note: When creating in a database, the properties must match the database schema
+func (c *Client) CreatePageInDatabase(ctx context.Context, databaseID string, properties PageProperties, blocks []Block) (*PageResponse, error) {
+	formattedDatabaseID := c.formatPageID(databaseID)
+
+	// Create the page without children first to avoid the 100-block limit
+	req := CreatePageRequest{
+		Parent: Parent{
+			Type:       "database_id",
+			DatabaseID: formattedDatabaseID,
+		},
+		Properties: properties,
+		// Don't include children in the initial creation
+	}
+
+	var resp PageResponse
+	if err := c.makeRequest(ctx, "POST", "/pages", req, &resp); err != nil {
+		return nil, fmt.Errorf("failed to create page in database: %w", err)
+	}
+
+	// If there are blocks to add, append them in chunks after page creation
+	if len(blocks) > 0 {
+		if err := c.AppendBlockChildren(ctx, resp.ID, blocks); err != nil {
+			return nil, fmt.Errorf("failed to add content to page: %w", err)
+		}
 	}
 
 	return &resp, nil
