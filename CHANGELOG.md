@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/wiremind/markdown-to-notionapi/compare/markdown-to-notionapi-v0.1.1...markdown-to-notionapi-0.1.2) (2025-10-10)
+
+
+### Bug Fixes
+
+* update .gitignore to include /dist, remove binary md2notion and remove from v tagging name to follow semver ([c6c4347](https://github.com/wiremind/markdown-to-notionapi/commit/c6c4347b8a80050a0d0fa5bfd0557e55deade290))
+
 ## [0.1.1](https://github.com/wiremind/markdown-to-notionapi/compare/markdown-to-notionapi-v0.1.0...markdown-to-notionapi-v0.1.1) (2025-10-10)
 
 
