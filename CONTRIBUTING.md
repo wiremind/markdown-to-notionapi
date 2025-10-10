@@ -2,6 +2,45 @@
 
 Thank you for your interest in contributing to md2notion! This document provides guidelines and instructions for contributing.
 
+## Commit Message Guidelines
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) to automate releases and changelog generation. Please format your commit messages as follows:
+
+```
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+### Commit Types
+
+- `feat:` - A new feature (correlates to a SemVer minor version bump)
+- `fix:` - A bug fix (correlates to a SemVer patch version bump)
+- `docs:` - Documentation only changes
+- `style:` - Changes that do not affect the meaning of the code (white-space, formatting, etc.)
+- `refactor:` - A code change that neither fixes a bug nor adds a feature
+- `perf:` - A code change that improves performance
+- `test:` - Adding missing tests or correcting existing tests
+- `build:` - Changes that affect the build system or external dependencies
+- `ci:` - Changes to our CI configuration files and scripts
+- `chore:` - Other changes that don't modify src or test files
+- `revert:` - Reverts a previous commit
+
+### Breaking Changes
+
+For breaking changes, add a `!` after the type/scope: `feat!:` or add `BREAKING CHANGE:` in the footer.
+
+### Examples
+
+```
+feat: add support for nested lists in markdown conversion
+fix: resolve issue with image URL handling
+docs: update README with new installation instructions
+feat!: change API response format for better consistency
+```
+
 ## Development Setup
 
 ### Prerequisites
