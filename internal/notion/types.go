@@ -120,8 +120,9 @@ type CreatePageRequest struct {
 
 // Parent specifies the parent of a page
 type Parent struct {
-	Type   string `json:"type"`
-	PageID string `json:"page_id,omitempty"`
+	Type       string `json:"type"`
+	PageID     string `json:"page_id,omitempty"`
+	DatabaseID string `json:"database_id,omitempty"`
 }
 
 // PageProperties contains page metadata
