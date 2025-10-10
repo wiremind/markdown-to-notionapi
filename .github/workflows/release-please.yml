@@ -1,0 +1,51 @@
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+name: release-please
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Optional: Build and attach binaries to the release
+      - uses: actions/checkout@v4
+        if: ${{ steps.release.outputs.release_created }}
+      
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+        if: ${{ steps.release.outputs.release_created }}
+      
+      - name: Build binaries
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          # Build for multiple platforms
+          GOOS=linux GOARCH=amd64 go build -o notion-md-linux-amd64 ./cmd/notion-md
+          GOOS=linux GOARCH=arm64 go build -o notion-md-linux-arm64 ./cmd/notion-md
+          GOOS=darwin GOARCH=amd64 go build -o notion-md-darwin-amd64 ./cmd/notion-md
+          GOOS=darwin GOARCH=arm64 go build -o notion-md-darwin-arm64 ./cmd/notion-md
+          GOOS=windows GOARCH=amd64 go build -o notion-md-windows-amd64.exe ./cmd/notion-md
+      
+      - name: Upload Release Artifacts
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ steps.release.outputs.tag_name }} \
+            notion-md-linux-amd64 \
+            notion-md-linux-arm64 \
+            notion-md-darwin-amd64 \
+            notion-md-darwin-arm64 \
+            notion-md-windows-amd64.exe
