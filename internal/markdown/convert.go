@@ -77,17 +77,17 @@ func (c *Converter) convertNode(node ast.Node, source []byte) ([]notion.Block, e
 		}
 		return []notion.Block{*block}, nil
 	case *ast.CodeBlock:
-		block, err := c.convertCodeBlock(n, source)
-		if err != nil || block == nil {
+		blocks, err := c.convertCodeBlock(n, source)
+		if err != nil {
 			return nil, err
 		}
-		return []notion.Block{*block}, nil
+		return blocks, nil
 	case *ast.FencedCodeBlock:
-		block, err := c.convertFencedCodeBlock(n, source)
-		if err != nil || block == nil {
+		blocks, err := c.convertFencedCodeBlock(n, source)
+		if err != nil {
 			return nil, err
 		}
-		return []notion.Block{*block}, nil
+		return blocks, nil
 	case *ast.ThematicBreak:
 		block, err := c.convertThematicBreak()
 		if err != nil || block == nil {
@@ -231,7 +231,7 @@ func (c *Converter) convertBlockquote(node *ast.Blockquote, source []byte) (*not
 }
 
 // convertCodeBlock converts indented code blocks
-func (c *Converter) convertCodeBlock(node *ast.CodeBlock, source []byte) (*notion.Block, error) {
+func (c *Converter) convertCodeBlock(node *ast.CodeBlock, source []byte) ([]notion.Block, error) {
 	var content strings.Builder
 	lines := node.Lines()
 	for i := 0; i < lines.Len(); i++ {
@@ -239,24 +239,11 @@ func (c *Converter) convertCodeBlock(node *ast.CodeBlock, source []byte) (*notio
 		content.Write(line.Value(source))
 	}
 
-	richText := []notion.RichText{{
-		Type: "text",
-		Text: &notion.Text{Content: content.String()},
-	}}
-
-	return &notion.Block{
-		Object: "block",
-		Type:   "code",
-		Code: &notion.Code{
-			RichText: richText,
-			Language: "plain text",
-			Caption:  []notion.RichText{},
-		},
-	}, nil
+	return c.createCodeBlocks(content.String(), "plain text"), nil
 }
 
 // convertFencedCodeBlock converts fenced code blocks
-func (c *Converter) convertFencedCodeBlock(node *ast.FencedCodeBlock, source []byte) (*notion.Block, error) {
+func (c *Converter) convertFencedCodeBlock(node *ast.FencedCodeBlock, source []byte) ([]notion.Block, error) {
 	var content strings.Builder
 	lines := node.Lines()
 	for i := 0; i < lines.Len(); i++ {
@@ -272,20 +259,77 @@ func (c *Converter) convertFencedCodeBlock(node *ast.FencedCodeBlock, source []b
 	// Map common language names to Notion's expected values
 	language = c.mapLanguage(language)
 
-	richText := []notion.RichText{{
-		Type: "text",
-		Text: &notion.Text{Content: content.String()},
-	}}
+	return c.createCodeBlocks(content.String(), language), nil
+}
 
-	return &notion.Block{
-		Object: "block",
-		Type:   "code",
-		Code: &notion.Code{
-			RichText: richText,
-			Language: language,
-			Caption:  []notion.RichText{},
-		},
-	}, nil
+// createCodeBlocks splits large code content into multiple blocks if needed
+// Notion API has a 2000 character limit for code block content
+func (c *Converter) createCodeBlocks(content, language string) []notion.Block {
+	const (
+		maxChars = 2000
+		// minDistanceFromLimit defines the minimum acceptable distance from the character limit
+		// when breaking at a newline. This ensures we don't create unnecessarily small chunks
+		// just to break at a newline. A value of 200 means we'll accept breaking up to 200 chars
+		// before the limit to preserve line integrity.
+		minDistanceFromLimit = 200
+	)
+
+	// If content fits in one block, return it
+	if len(content) <= maxChars {
+		return []notion.Block{{
+			Object: "block",
+			Type:   "code",
+			Code: &notion.Code{
+				RichText: []notion.RichText{{
+					Type: "text",
+					Text: &notion.Text{Content: content},
+				}},
+				Language: language,
+				Caption:  []notion.RichText{},
+			},
+		}}
+	}
+
+	// Need to split into multiple blocks
+	if c.verbose {
+		fmt.Fprintf(os.Stderr, "Splitting code block of %d characters into multiple blocks\n", len(content))
+	}
+
+	var blocks []notion.Block
+	for len(content) > 0 {
+		chunkSize := maxChars
+		if len(content) < maxChars {
+			chunkSize = len(content)
+		}
+
+		// Try to break at a newline to avoid splitting lines
+		if chunkSize == maxChars && chunkSize < len(content) {
+			// Look for the last newline before maxChars
+			lastNewline := strings.LastIndex(content[:chunkSize], "\n")
+			if lastNewline > 0 && lastNewline > maxChars-minDistanceFromLimit {
+				// Only break at newline if it's reasonably close to maxChars
+				chunkSize = lastNewline + 1
+			}
+		}
+
+		chunk := content[:chunkSize]
+		content = content[chunkSize:]
+
+		blocks = append(blocks, notion.Block{
+			Object: "block",
+			Type:   "code",
+			Code: &notion.Code{
+				RichText: []notion.RichText{{
+					Type: "text",
+					Text: &notion.Text{Content: chunk},
+				}},
+				Language: language,
+				Caption:  []notion.RichText{},
+			},
+		})
+	}
+
+	return blocks
 }
 
 // convertThematicBreak converts horizontal rules
