@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/wiremind/markdown-to-notionapi/compare/markdown-to-notionapi-0.1.3...markdown-to-notionapi-0.1.4) (2025-12-09)
+
+
+### Bug Fixes
+
+* handle large code blocks by splitting into multiple blocks and skip empty chunks in processing ([bee3680](https://github.com/wiremind/markdown-to-notionapi/commit/bee36800d6cc898fae099b3349348472bfb5f86c))
+
 ## [0.1.3](https://github.com/wiremind/markdown-to-notionapi/compare/markdown-to-notionapi-0.1.2...markdown-to-notionapi-0.1.3) (2025-10-10)
 
 
