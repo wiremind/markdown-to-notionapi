@@ -80,6 +80,7 @@ func (c *Client) processBlocksInChunks(ctx context.Context, blocks []Block, proc
 		}
 
 		chunk := blocks[i:end]
+
 		if err := processFn(ctx, chunk); err != nil {
 			return fmt.Errorf("failed to process blocks (chunk %d-%d): %w", i+1, end, err)
 		}

@@ -497,3 +497,74 @@ func compareRichTextItem(t *testing.T, got, want notion.RichText) {
 		t.Errorf("RichText.Href = %q, want %q", *got.Href, *want.Href)
 	}
 }
+
+func TestConverter_LargeCodeBlock(t *testing.T) {
+	tests := []struct {
+		name        string
+		markdown    string
+		wantBlocks  int
+		description string
+	}{
+		{
+			name:        "small code block",
+			markdown:    "```go\npackage main\n\nfunc main() {\n    println(\"hello\")\n}\n```",
+			wantBlocks:  1,
+			description: "Code block under 2000 chars should remain as single block",
+		},
+		{
+			name: "large code block",
+			markdown: func() string {
+				// Create a code block with more than 2000 characters
+				code := "```python\n"
+				for i := 0; i < 100; i++ {
+					code += "def function_" + string(rune('0'+i%10)) + "():\n"
+					code += "    # This is a comment line that adds content\n"
+					code += "    print('This is a long line of code that helps reach the character limit')\n"
+					code += "    return True\n\n"
+				}
+				code += "```"
+				return code
+			}(),
+			wantBlocks:  0, // 0 means we'll just check it's > 1
+			description: "Code block over 2000 chars should be split into multiple blocks",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewConverter("", false)
+			blocks, err := c.Convert([]byte(tt.markdown))
+			if err != nil {
+				t.Fatalf("Convert() error = %v", err)
+			}
+
+			// Check block count if specified (0 means check for > 1)
+			if tt.wantBlocks > 0 {
+				if len(blocks) != tt.wantBlocks {
+					t.Errorf("Convert() returned %d blocks, want %d - %s", len(blocks), tt.wantBlocks, tt.description)
+				}
+			} else if len(blocks) <= 1 {
+				t.Errorf("Convert() returned %d blocks, want > 1 - %s", len(blocks), tt.description)
+			}
+
+			// Verify all blocks are code blocks and respect the 2000 char limit
+			for i, block := range blocks {
+				if block.Type != "code" {
+					t.Errorf("Block %d: type = %q, want %q", i, block.Type, "code")
+				}
+				if block.Code == nil {
+					t.Errorf("Block %d: Code is nil", i)
+					continue
+				}
+				if len(block.Code.RichText) == 0 {
+					t.Errorf("Block %d: Code.RichText is empty", i)
+					continue
+				}
+				content := block.Code.RichText[0].Text.Content
+				if len(content) > 2000 {
+					t.Errorf("Block %d: content length = %d, exceeds 2000 char limit", i, len(content))
+				}
+			}
+		})
+	}
+}
